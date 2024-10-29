@@ -1,15 +1,24 @@
 import cv2
 
-# Inicializa la captura de video
-cap = cv2.VideoCapture("libcamera-vid --inline --width 640 --height 480 --framerate 30 --output /dev/stdout")
-
-while True:
-    ret, frame = cap.read()
-    if frame is None:
-        print("Error: No se capturó el frame.")
-        break
+# Intenta abrir cada dispositivo de video
+for i in range(2):  # Cambia 2 al número total de dispositivos que encuentres
+    cap = cv2.VideoCapture(f'/dev/video{i}')
     
-    # Procesar el frame
-    # ...
+    if cap.isOpened():
+        print(f'Capturando desde: /dev/video{i}')
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                print(f"Error: No se pudo capturar el frame desde /dev/video{i}.")
+                break
+            
+            cv2.imshow(f'Frame desde /dev/video{i}', frame)
+            
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
 
-cap.release()
+        cap.release()
+    else:
+        print(f'No se pudo abrir /dev/video{i}.')
+
+cv2.destroyAllWindows()
