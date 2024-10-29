@@ -1,0 +1,15 @@
+import cv2
+
+# Inicializa la captura de video
+cap = cv2.VideoCapture("libcamera-vid --inline --width 640 --height 480 --framerate 30 --output /dev/stdout")
+
+while True:
+    ret, frame = cap.read()
+    if frame is None:
+        print("Error: No se capturó el frame.")
+        break
+    
+    # Procesar el frame
+    # ...
+
+cap.release()
