@@ -1,5 +1,26 @@
 wget https://github.com/AlexeyAB/darknet/releases/download/yolo-v4-tiny/yolov4-tiny.weights
 
+prueb:
+from picamera2 import Picamera2
+import cv2
+
+picam2 = Picamera2()
+picam2.start()
+
+while True:
+    frame = picam2.capture_array()
+    if frame is None:
+        print("Error: No se pudo capturar la imagen.")
+        break
+
+    cv2.imshow('Cámara', frame)
+    
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+picam2.close()
+cv2.destroyAllWindows()
+
 
 import cv2
 import numpy as np
