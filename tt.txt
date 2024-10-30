@@ -1,52 +1,141 @@
-from picamera2 import Picamera2
-from PIL import Image
-import numpy as np
+wget https://github.com/AlexeyAB/darknet/releases/download/yolo-v4-tiny/yolov4-tiny.weights
+
+
+person
+bicycle
+car
+motorbike
+airplane
+bus
+train
+truck
+boat
+traffic light
+fire hydrant
+stop sign
+parking meter
+bench
+bird
+cat
+dog
+horse
+sheep
+cow
+elephant
+bear
+zebra
+giraffe
+backpack
+umbrella
+handbag
+tie
+suitcase
+frisbee
+skis
+snowboard
+sports ball
+kite
+baseball bat
+baseball glove
+skateboard
+surfboard
+tennis racket
+bottle
+wine glass
+cup
+fork
+knife
+spoon
+bowl
+banana
+apple
+sandwich
+orange
+broccoli
+carrot
+hot dog
+pizza
+donut
+cake
+chair
+sofa
+potted plant
+bed
+dining table
+toilet
+tvmonitor
+laptop
+mouse
+remote
+keyboard
+cell phone
+microwave
+oven
+toaster
+sink
+refrigerator
+book
+clock
+vase
+scissors
+teddy bear
+hair dryer
+toothbrush
+
+aquiii
 import cv2
+import numpy as np
+from picamera2 import Picamera2
+import os
 
 # Inicializar la cámara
 picam2 = Picamera2()
-picam2.start()  # Iniciar la cámara
+picam2.start()
 
-# Capturar una imagen
-image = picam2.capture_array()
+# Configurar el modelo de YOLO
+yolo_cfg = './darknet/yolov4-tiny.cfg'  # Cambia la ruta según donde esté el archivo
+yolo_weights = './darknet/yolov4-tiny.weights'  # Cambia la ruta según donde esté el archivo
+yolo_names = './darknet/coco.names'  # Cambia la ruta según donde esté el archivo
 
-# Verifica si la imagen se capturó correctamente
-if image is not None:
-    # Convertir la imagen a un formato que pueda usar OpenCV
-    image_cv = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+# Cargar la red YOLO
+net = cv2.dnn.readNet(yolo_weights, yolo_cfg)
+layer_names = net.getLayerNames()
+output_layers = [layer_names[i - 1] for i in net.getUnconnectedOutLayers()]
 
-    # Cargar YOLO
-    net = cv2.dnn.readNet('yolov4.weights', 'yolov4.cfg')
-    layer_names = net.getLayerNames()
-    output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+# Cargar las clases
+with open(yolo_names, 'r') as f:
+    classes = [line.strip() for line in f.readlines()]
 
-    # Obtener las dimensiones de la imagen
-    height, width = image_cv.shape[:2]
+# Capturar imágenes y realizar detección
+while True:
+    image = picam2.capture_array()
+    height, width, _ = image.shape
 
-    # Crear el blob y pasarlo a la red
-    blob = cv2.dnn.blobFromImage(image_cv, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
+    # Crear un blob a partir de la imagen
+    blob = cv2.dnn.blobFromImage(image, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
     net.setInput(blob)
 
-    # Realizar la detección
-    outputs = net.forward(output_layers)
+    # Hacer la detección
+    outs = net.forward(output_layers)
 
-    # Procesar la salida
+    # Procesar las detecciones
     boxes = []
     confidences = []
     class_ids = []
 
-    for output in outputs:
-        for detection in output:
-            scores = detection[5:]  # Obtener las puntuaciones
+    for out in outs:
+        for detection in out:
+            scores = detection[5:]
             class_id = np.argmax(scores)
             confidence = scores[class_id]
-            if confidence > 0.5:  # Umbral de confianza
+            if confidence > 0.5:
+                # Obtener las coordenadas del cuadro delimitador
                 center_x = int(detection[0] * width)
                 center_y = int(detection[1] * height)
                 w = int(detection[2] * width)
                 h = int(detection[3] * height)
 
-                # Cálculo de las coordenadas del cuadro delimitador
+                # Rectángulo de la caja
                 x = int(center_x - w / 2)
                 y = int(center_y - h / 2)
 
@@ -54,11 +143,26 @@ if image is not None:
                 confidences.append(float(confidence))
                 class_ids.append(class_id)
 
-    # Aplicar supresión de no máximos
+    # Aplicar Non-Maxima Suppression
     indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
 
     # Dibujar los cuadros delimitadores
     for i in range(len(boxes)):
         if i in indexes:
             x, y, w, h = boxes[i]
-            label = str(classes[class_id
+            label = str(classes[class_ids[i]])
+            cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            cv2.putText(image, label, (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+    # Mostrar la imagen
+    cv2.imshow('Detección de Objetos', image)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+picam2.close()
+cv2.destroyAllWindows()
+
+
+
+
+
