@@ -1,24 +1,22 @@
-import cv2
+from picamera2 import Picamera2
+from PIL import Image
+import numpy as np
 
-# Intenta abrir cada dispositivo de video
-for i in range(2):  # Cambia 2 al número total de dispositivos que encuentres
-    cap = cv2.VideoCapture(f'/dev/video{i}')
-    
-    if cap.isOpened():
-        print(f'Capturando desde: /dev/video{i}')
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                print(f"Error: No se pudo capturar el frame desde /dev/video{i}.")
-                break
-            
-            cv2.imshow(f'Frame desde /dev/video{i}', frame)
-            
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
+# Inicializar la cámara
+picam2 = Picamera2()
+picam2.start()  # Iniciar la cámara
 
-        cap.release()
-    else:
-        print(f'No se pudo abrir /dev/video{i}.')
+# Capturar una imagen
+image = picam2.capture_array()
 
-cv2.destroyAllWindows()
+# Verifica si la imagen se capturó correctamente
+if image is not None:
+    # Convertir la imagen a un formato que pueda mostrar PIL
+    image_pil = Image.fromarray(image)
+
+    # Mostrar la imagen
+    image_pil.show()  # Esto abrirá la imagen en el visor de imágenes predeterminado
+else:
+    print("Error: No se pudo capturar la imagen.")
+
+picam2.close()  # Cerrar la cámara al finalizar
