@@ -1,86 +1,70 @@
 wget https://github.com/AlexeyAB/darknet/releases/download/yolo-v4-tiny/yolov4-tiny.weights
 
 
-person
-bicycle
-car
-motorbike
-airplane
-bus
-train
-truck
-boat
-traffic light
-fire hydrant
-stop sign
-parking meter
-bench
-bird
-cat
-dog
-horse
-sheep
-cow
-elephant
-bear
-zebra
-giraffe
-backpack
-umbrella
-handbag
-tie
-suitcase
-frisbee
-skis
-snowboard
-sports ball
-kite
-baseball bat
-baseball glove
-skateboard
-surfboard
-tennis racket
-bottle
-wine glass
-cup
-fork
-knife
-spoon
-bowl
-banana
-apple
-sandwich
-orange
-broccoli
-carrot
-hot dog
-pizza
-donut
-cake
-chair
-sofa
-potted plant
-bed
-dining table
-toilet
-tvmonitor
-laptop
-mouse
-remote
-keyboard
-cell phone
-microwave
-oven
-toaster
-sink
-refrigerator
-book
-clock
-vase
-scissors
-teddy bear
-hair dryer
-toothbrush
+import cv2
+import numpy as np
+from picamera2 import Picamera2
+
+# Inicializar la cámara
+picam2 = Picamera2()
+picam2.start()  # Iniciar la cámara
+
+# Cargar el modelo YOLO
+net = cv2.dnn.readNet('yolov4.weights', 'yolov4.cfg')
+
+# Configurar las capas de salida
+layer_names = net.getLayerNames()
+output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+
+# Capturar una imagen
+image = picam2.capture_array()
+
+# Verifica si la imagen se capturó correctamente
+if image is not None:
+    # Asegurarse de que la imagen tenga 3 canales (RGB)
+    if image.shape[2] == 4:  # Si tiene un canal alfa
+        image = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)  # Convertir de RGBA a RGB
+    
+    # Procesar la imagen para detección
+    height, width = image.shape[:2]
+    blob = cv2.dnn.blobFromImage(image, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
+    net.setInput(blob)
+    
+    # Realizar la detección
+    detections = net.forward(output_layers)
+
+    # Procesar los resultados de la detección
+    for detection in detections:
+        for obj in detection:
+            scores = obj[5:]
+            class_id = np.argmax(scores)
+            confidence = scores[class_id]
+            if confidence > 0.5:  # Umbral de confianza
+                # Calcular las coordenadas del bounding box
+                center_x = int(obj[0] * width)
+                center_y = int(obj[1] * height)
+                w = int(obj[2] * width)
+                h = int(obj[3] * height)
+                
+                # Dibujar el bounding box
+                x = int(center_x - w / 2)
+                y = int(center_y - h / 2)
+                cv2.rectangle(image, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                cv2.putText(image, f'Class: {class_id} Confidence: {confidence:.2f}', 
+                            (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+
+    # Mostrar la imagen con detecciones
+    cv2.imshow('Detección de Objetos', image)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+
+else:
+    print("Error: No se pudo capturar la imagen.")
+
+picam2.close()  # Cerrar la cámara al finalizar
+
+
+
 
 aquiii
 import cv2
