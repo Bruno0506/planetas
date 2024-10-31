@@ -1,22 +1,32 @@
-from picamera2 import Picamera2
-from PIL import Image
-import numpy as np
+import cv2
+from yolov4tiny import YoloV4Tiny  # Asegúrate de tener tu modelo cargado
 
-# Inicializar la cámara
-picam2 = Picamera2()
-picam2.start()  # Iniciar la cámara
+# Inicializar la cámara USB
+cap = cv2.VideoCapture(0)  # "0" selecciona la primera cámara conectada (tu LifeCam)
 
-# Capturar una imagen
-image = picam2.capture_array()
-
-# Verifica si la imagen se capturó correctamente
-if image is not None:
-    # Convertir la imagen a un formato que pueda mostrar PIL
-    image_pil = Image.fromarray(image)
-
-    # Mostrar la imagen
-    image_pil.show()  # Esto abrirá la imagen en el visor de imágenes predeterminado
+if not cap.isOpened():
+    print("Error: No se pudo abrir la cámara.")
 else:
-    print("Error: No se pudo capturar la imagen.")
+    # Configura la resolución si es necesario
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
 
-picam2.close()  # Cerrar la cámara al finalizar
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Error: No se pudo capturar el frame.")
+            break
+
+        # Aquí puedes insertar el código de detección con YOLO
+        results = YoloV4Tiny.detect(frame)
+        for (x, y, w, h) in results:
+            cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+
+        # Mostrar la imagen con las detecciones
+        cv2.imshow("Detección de Objetos", frame)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+
+    cap.release()
+    cv2.destroyAllWindows()
