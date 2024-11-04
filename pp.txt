@@ -2,67 +2,70 @@ from picamera2 import Picamera2
 import cv2
 import numpy as np
 
-# Inicializar YOLO
-net = cv2.dnn.readNet("path/to/yolov4-tiny.weights", "path/to/yolov4-tiny.cfg")
-with open("path/to/coco.names", "r") as f:
-    classes = [line.strip() for line in f.readlines()]
-
-# Configurar YOLO en OpenCV
-layer_names = net.getLayerNames()
-output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
-
 # Inicializar la cámara
 picam2 = Picamera2()
-config = picam2.create_still_configuration({"size": (1280, 720)})
-picam2.configure(config)
+picam2.configure(picam2.create_still_configuration({"size": (1280, 720)}))  # Ajusta la resolución según sea necesario
 picam2.start()
 
-# Capturar imagen
-image = picam2.capture_array()
+# Cargar tus pesos y configuración de YOLO
+# Asegúrate de tener las rutas correctas
+weights_path = 'yolov4-tiny.weights'  # Ruta a los pesos de YOLO
+config_path = 'yolov4-tiny.cfg'  # Ruta al archivo de configuración de YOLO
+net = cv2.dnn.readNet(weights_path, config_path)
 
-# Verificar si la imagen fue capturada
-if image is not None:
-    # Convertir la imagen a blob para YOLO
-    blob = cv2.dnn.blobFromImage(image, 1/255.0, (416, 416), swapRB=True, crop=False)
-    net.setInput(blob)
-    outputs = net.forward(output_layers)
+# Cargar las clases de objetos
+with open('coco.names', 'r') as f:
+    classes = [line.strip() for line in f.readlines()]
 
-    # Procesar las salidas de YOLO
-    height, width = image.shape[:2]
-    boxes, confidences, class_ids = [], [], []
+# Iniciar la captura de video
+try:
+    while True:
+        # Capturar un frame
+        frame = picam2.capture_array()
+        
+        # Verifica que el frame sea un array de NumPy
+        if isinstance(frame, np.ndarray):
+            # Preparar el frame para la detección
+            blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
+            net.setInput(blob)
 
-    for output in outputs:
-        for detection in output:
-            scores = detection[5:]
-            class_id = np.argmax(scores)
-            confidence = scores[class_id]
-            if confidence > 0.5:  # Umbral de confianza
-                center_x = int(detection[0] * width)
-                center_y = int(detection[1] * height)
-                w = int(detection[2] * width)
-                h = int(detection[3] * height)
-                x = int(center_x - w / 2)
-                y = int(center_y - h / 2)
-                boxes.append([x, y, w, h])
-                confidences.append(float(confidence))
-                class_ids.append(class_id)
+            # Obtener las salidas de la red
+            layer_names = net.getLayerNames()
+            output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+            outs = net.forward(output_layers)
 
-    # Aplicar Non-Maximum Suppression
-    indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
-    for i in indexes.flatten():
-        x, y, w, h = boxes[i]
-        label = str(classes[class_ids[i]])
-        confidence = confidences[i]
-        color = (0, 255, 0)
-        cv2.rectangle(image, (x, y), (x + w, y + h), color, 2)
-        cv2.putText(image, f"{label} {int(confidence * 100)}%", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            # Procesar las detecciones
+            for out in outs:
+                for detection in out:
+                    scores = detection[5:]  # Las probabilidades de clase
+                    class_id = np.argmax(scores)
+                    confidence = scores[class_id]
 
-    # Mostrar la imagen con detecciones
-    cv2.imshow("Detección de Objetos", image)
-    cv2.waitKey(0)
+                    # Filtrar detecciones por confianza
+                    if confidence > 0.5:  # Ajusta este umbral según sea necesario
+                        # Obtener coordenadas del bounding box
+                        center_x = int(detection[0] * frame.shape[1])
+                        center_y = int(detection[1] * frame.shape[0])
+                        w = int(detection[2] * frame.shape[1])
+                        h = int(detection[3] * frame.shape[0])
+
+                        # Calcular los bordes del bounding box
+                        x = int(center_x - w / 2)
+                        y = int(center_y - h / 2)
+
+                        # Dibujar el bounding box y el texto
+                        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                        cv2.putText(frame, f"{classes[class_id]}: {confidence:.2f}", (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+
+            # Mostrar el frame con detecciones
+            cv2.imshow("Detección de Objetos", frame)
+
+            # Salir del bucle si se presiona 'q'
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+        else:
+            print("Error: El frame capturado no es un array de NumPy.")
+finally:
+    # Cerrar la cámara y las ventanas al finalizar
+    picam2.close()
     cv2.destroyAllWindows()
-else:
-    print("Error: No se pudo capturar la imagen.")
-
-# Cerrar la cámara al finalizar
-picam2.close()
