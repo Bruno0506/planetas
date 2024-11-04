@@ -2,24 +2,67 @@ from picamera2 import Picamera2
 import cv2
 import numpy as np
 
-# Inicializa la cámara
-picam2 = Picamera2()
-picam2.configure(picam2.create_still_configuration())
+# Inicializar YOLO
+net = cv2.dnn.readNet("path/to/yolov4-tiny.weights", "path/to/yolov4-tiny.cfg")
+with open("path/to/coco.names", "r") as f:
+    classes = [line.strip() for line in f.readlines()]
 
-# Inicia la cámara
+# Configurar YOLO en OpenCV
+layer_names = net.getLayerNames()
+output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+
+# Inicializar la cámara
+picam2 = Picamera2()
+config = picam2.create_still_configuration({"size": (1280, 720)})
+picam2.configure(config)
 picam2.start()
 
-# Captura una imagen
-frame = picam2.capture_array()
+# Capturar imagen
+image = picam2.capture_array()
 
-# Verifica si la imagen fue capturada correctamente
-if frame is not None:
-    # Muestra la imagen en una ventana OpenCV
-    cv2.imshow("Imagen del módulo de cámara", frame)
+# Verificar si la imagen fue capturada
+if image is not None:
+    # Convertir la imagen a blob para YOLO
+    blob = cv2.dnn.blobFromImage(image, 1/255.0, (416, 416), swapRB=True, crop=False)
+    net.setInput(blob)
+    outputs = net.forward(output_layers)
+
+    # Procesar las salidas de YOLO
+    height, width = image.shape[:2]
+    boxes, confidences, class_ids = [], [], []
+
+    for output in outputs:
+        for detection in output:
+            scores = detection[5:]
+            class_id = np.argmax(scores)
+            confidence = scores[class_id]
+            if confidence > 0.5:  # Umbral de confianza
+                center_x = int(detection[0] * width)
+                center_y = int(detection[1] * height)
+                w = int(detection[2] * width)
+                h = int(detection[3] * height)
+                x = int(center_x - w / 2)
+                y = int(center_y - h / 2)
+                boxes.append([x, y, w, h])
+                confidences.append(float(confidence))
+                class_ids.append(class_id)
+
+    # Aplicar Non-Maximum Suppression
+    indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
+    for i in indexes.flatten():
+        x, y, w, h = boxes[i]
+        label = str(classes[class_ids[i]])
+        confidence = confidences[i]
+        color = (0, 255, 0)
+        cv2.rectangle(image, (x, y), (x + w, y + h), color, 2)
+        cv2.putText(image, f"{label} {int(confidence * 100)}%", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+
+    # Mostrar la imagen con detecciones
+    cv2.imshow("Detección de Objetos", image)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 else:
     print("Error: No se pudo capturar la imagen.")
 
-# Cierra la cámara al terminar
+# Cerrar la cámara al finalizar
 picam2.close()
