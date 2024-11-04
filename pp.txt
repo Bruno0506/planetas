@@ -1,86 +1,25 @@
+from picamera2 import Picamera2
 import cv2
 import numpy as np
 
-# Cargar el modelo YOLO, estos debeben ser los ya entrenados
-net = cv2.dnn.readNet("yolov4-tiny.weights", "model/yolov4-tiny.cfg")
+# Inicializa la cámara
+picam2 = Picamera2()
+picam2.configure(picam2.create_still_configuration())
 
-# Leer las clases
-classes = []
-with open("model/my_classes.name", "r") as f:
-    classes = [line.strip() for line in f.readlines()]
+# Inicia la cámara
+picam2.start()
 
-# Obtener los nombres de las capas y las capas de salida
-layer_names = net.getLayerNames()
-output_layers = [layer_names[i - 1] for i in net.getUnconnectedOutLayers()]
+# Captura una imagen
+frame = picam2.capture_array()
 
-# Configurar la cámara (0 para webcam, o usar un archivo de video)
-#SOLO USAR EN CASO DE QUE SE USE REMOTO, AHORITA SOLO CONCENTRARSE EN LOCAL, url = "http://192.168.252.164:8080/video"
-cap = cv2.VideoCapture(0)
+# Verifica si la imagen fue capturada correctamente
+if frame is not None:
+    # Muestra la imagen en una ventana OpenCV
+    cv2.imshow("Imagen del módulo de cámara", frame)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+else:
+    print("Error: No se pudo capturar la imagen.")
 
-# Ajustar resolución de la cámara (opcional)
-cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
-cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
-
-# Crear una ventana redimensionable
-cv2.namedWindow("Image", cv2.WINDOW_NORMAL)
-cv2.resizeWindow("Image", 800, 600)  # Ajustar tamaño de la ventana
-
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
-
-    height, width, channels = frame.shape
-
-    # Crear el blob para YOLO
-    blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
-    net.setInput(blob)
-
-    # Realizar las detecciones
-    detections = net.forward(output_layers)
-
-    boxes = []
-    confidences = []
-    class_ids = []
-
-    for output in detections:
-        for detection in output:
-            scores = detection[5:]  # Las puntuaciones de las clases
-            class_id = np.argmax(scores)  # Obtener la clase con mayor probabilidad
-            confidence = scores[class_id]  # Obtener la confianza de esa clase
-            if confidence > 0.3:  # Umbral de confianza
-                # Escalar las coordenadas de detección al tamaño del fotograma original
-                center_x = int(detection[0] * width)
-                center_y = int(detection[1] * height)
-                w = int(detection[2] * width)
-                h = int(detection[3] * height)
-
-                # Obtener las coordenadas de la esquina superior izquierda
-                x = int(center_x - w / 2)
-                y = int(center_y - h / 2)
-
-                boxes.append([x, y, w, h])
-                confidences.append(float(confidence))
-                class_ids.append(class_id)
-
-    # Aplicar Non-Maxima Suppression para eliminar cuadros redundantes
-    indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
-
-    # Dibujar las cajas y etiquetas en el fotograma
-    for i in range(len(boxes)):
-        if i in indexes:
-            x, y, w, h = boxes[i]
-            label = str(classes[class_ids[i]])
-            confidence = confidences[i]
-            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-            cv2.putText(frame, f"{label} {confidence:.2f}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
-
-    # Mostrar el fotograma con las detecciones
-    cv2.imshow("Image", frame)
-
-    # Salir con la tecla 'q'
-    if cv2.waitKey(1) == ord("q"):
-        break
-
-cap.release()
-cv2.destroyAllWindows()
+# Cierra la cámara al terminar
+picam2.close()
