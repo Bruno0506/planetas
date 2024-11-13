@@ -1,71 +1,98 @@
-from picamera2 import Picamera2
+Impresion pero sin mostrar video!!!:
 import cv2
 import numpy as np
 
-# Inicializar la cámara
-picam2 = Picamera2()
-picam2.configure(picam2.create_still_configuration({"size": (1280, 720)}))  # Ajusta la resolución según sea necesario
-picam2.start()
+# Cargar el modelo YOLO (deben ser modelos entrenados previamente)
+net = cv2.dnn.readNet("model/yolov4-tiny.weights", "model/yolov4-tiny.cfg")
 
-# Cargar tus pesos y configuración de YOLO
-# Asegúrate de tener las rutas correctas
-weights_path = 'yolov4-tiny.weights'  # Ruta a los pesos de YOLO
-config_path = 'yolov4-tiny.cfg'  # Ruta al archivo de configuración de YOLO
-net = cv2.dnn.readNet(weights_path, config_path)
-
-# Cargar las clases de objetos
-with open('coco.names', 'r') as f:
+# Leer las clases
+classes = []
+with open("model/my_classes.name", "r") as f:
     classes = [line.strip() for line in f.readlines()]
 
-# Iniciar la captura de video
-try:
-    while True:
-        # Capturar un frame
-        frame = picam2.capture_array()
-        
-        # Verifica que el frame sea un array de NumPy
-        if isinstance(frame, np.ndarray):
-            # Preparar el frame para la detección
-            blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
-            net.setInput(blob)
+# Obtener los nombres de las capas y las capas de salida
+layer_names = net.getLayerNames()
+output_layers = [layer_names[i - 1] for i in net.getUnconnectedOutLayers()]
 
-            # Obtener las salidas de la red
-            layer_names = net.getLayerNames()
-            output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
-            outs = net.forward(output_layers)
+# Configurar la cámara (usar 0 para webcam)
+cap = cv2.VideoCapture(0)
 
-            # Procesar las detecciones
-            for out in outs:
-                for detection in out:
-                    scores = detection[5:]  # Las probabilidades de clase
-                    class_id = np.argmax(scores)
-                    confidence = scores[class_id]
+# Ajustar resolución de la cámara (opcional)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 
-                    # Filtrar detecciones por confianza
-                    if confidence > 0.5:  # Ajusta este umbral según sea necesario
-                        # Obtener coordenadas del bounding box
-                        center_x = int(detection[0] * frame.shape[1])
-                        center_y = int(detection[1] * frame.shape[0])
-                        w = int(detection[2] * frame.shape[1])
-                        h = int(detection[3] * frame.shape[0])
+while True:
+    ret, frame = cap.read()
+    if not ret:
+        break
 
-                        # Calcular los bordes del bounding box
-                        x = int(center_x - w / 2)
-                        y = int(center_y - h / 2)
+    height, width, channels = frame.shape
 
-                        # Dibujar el bounding box y el texto
-                        cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                        cv2.putText(frame, f"{classes[class_id]}: {confidence:.2f}", (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
+    # Crear el blob para YOLO
+    blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
+    net.setInput(blob)
 
-            # Mostrar el frame con detecciones
-            cv2.imshow("Detección de Objetos", frame)
+    # Realizar las detecciones
+    detections = net.forward(output_layers)
 
-            # Salir del bucle si se presiona 'q'
-            if cv2.waitKey(1) & 0xFF == ord('q'):
-                break
-        else:
-            print("Error: El frame capturado no es un array de NumPy.")
-finally:
-    # Cerrar la cámara y las ventanas al finalizar
-    picam2.close()
-    cv2.destroyAllWindows()
+    boxes = []
+    confidences = []
+    class_ids = []
+
+    for output in detections:
+        for detection in output:
+            scores = detection[5:]  # Las puntuaciones de las clases
+            class_id = np.argmax(scores)  # Obtener la clase con mayor probabilidad
+            confidence = scores[class_id]  # Obtener la confianza de esa clase
+            if confidence > 0.3 and class_id == classes.index("persona"):  # Filtrar solo la clase 'person'
+                # Escalar las coordenadas de detección al tamaño del fotograma original
+                center_x = int(detection[0] * width)
+                center_y = int(detection[1] * height)
+                w = int(detection[2] * width)
+                h = int(detection[3] * height)
+
+                # Obtener las coordenadas de la esquina superior izquierda
+                x = int(center_x - w / 2)
+                y = int(center_y - h / 2)
+
+                boxes.append([x, y, w, h])
+                confidences.append(float(confidence))
+                class_ids.append(class_id)
+
+    # Aplicar Non-Maxima Suppression para eliminar cuadros redundantes
+    indexes = cv2.dnn.NMSBoxes(boxes, confidences, 0.5, 0.4)
+
+    # Dibujar las detecciones de personas en el fotograma
+    for i in range(len(boxes)):
+        if i in indexes:
+            x, y, w, h = boxes[i]
+            label = str(classes[class_ids[i]])
+            confidence = confidences[i]
+            color = (0, 255, 0)  # Verde para la clase 'person'
+            cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
+            cv2.putText(frame, f"{label} {confidence:.2f}", (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
+            print(f"Detección: {label}, Confianza: {confidence:.2f}")
+
+            # Estimación de la distancia (simple, basada en la altura del bounding box)
+            focal_length = 700  # Longitud focal estimada, ajustar según la cámara y distancia real
+            known_height = 1.7  # Altura promedio de una persona en metros
+            perceived_height = h
+            if perceived_height > 0:
+                distance = (focal_length * known_height) / perceived_height
+                print(f"Distancia estimada: {distance:.2f} metros")
+
+    # Mostrar el fotograma con las detecciones
+    cv2.imshow("Detección de Personas", frame)
+
+    # Romper el bucle al presionar la tecla 'q'
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
+
+cap.release()
+cv2.destroyAllWindows()
+
+
+
+
+Con impresion nada mas!!!: Es namas comentar # cv2.imshow("Detección de Personas", frame)
+
