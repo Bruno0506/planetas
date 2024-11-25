@@ -28,6 +28,8 @@ net.setPreferableTarget(cv2.dnn.DNN_TARGET_CPU)
 prev_time = time.time()
 frame_interval = 3  # Procesar cada 3 fotogramas para optimizar rendimiento
 frame_count = 0
+focal_length = 615  # Focal estimada (ajustar según tu cámara)
+real_width_of_object = 0.6  # Ancho real del objeto en metros (ejemplo: 60 cm)
 
 while True:
     # Capturar un fotograma de la cámara
@@ -50,7 +52,7 @@ while True:
     net.setInput(blob)
     detections = net.forward(output_layers)
 
-    boxes, confidences, class_ids = [], [], []
+    boxes, confidences, class_ids, distances = [], [], [], []
 
     # Procesar las detecciones
     for output in detections:
@@ -69,6 +71,10 @@ while True:
                 confidences.append(float(confidence))
                 class_ids.append(class_id)
 
+                # Calcular la distancia (en metros)
+                distance = (real_width_of_object * focal_length) / w
+                distances.append(distance)
+
     # Aplicar Non-Maximum Suppression con un umbral más estricto
     indexes = cv2.dnn.NMSBoxes(boxes, confidences, score_threshold=0.5, nms_threshold=0.3)
 
@@ -78,11 +84,12 @@ while True:
             x, y, w, h = boxes[i]
             label = classes[class_ids[i]]
             confidence = confidences[i]
+            distance = distances[i]
 
             # Dibujar cuadro y texto
             color = (0, 255, 0)
             cv2.rectangle(frame, (x, y), (x + w, y + h), color, 2)
-            cv2.putText(frame, f"{label} {confidence:.2f}",
+            cv2.putText(frame, f"{label} {confidence:.2f} Dist: {distance:.2f}m",
                         (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, color, 2)
 
     # Calcular y mostrar FPS
@@ -90,6 +97,8 @@ while True:
     fps = 1 / (current_time - prev_time)
     prev_time = current_time
     print(f"FPS: {fps:.2f}")
+    print(f"Tiempo por cuadro: {1 / fps:.2f} segundos")
+    cv2.putText(frame, f"FPS: {fps:.2f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
 
     # Mostrar el fotograma
     cv2.imshow("Detección de Personas", frame)
