@@ -86,6 +86,9 @@ def send_ned_velocity(velocity_x, velocity_y, velocity_z, duration):
         vehicle.send_mavlink(msg)
         time.sleep(1)
 
+    # Detener el dron después del movimiento
+    send_ned_velocity(0, 0, 0, 1)  # Envía velocidad cero para detener el dron
+
 def avanzar(duration):
     print("Avanzando...")
     send_ned_velocity(1, 0, 0, duration)  # Adelante (Norte)
