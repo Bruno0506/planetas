@@ -25,9 +25,9 @@ with open("coco.names", "r") as f:
 # Iniciar la cámara
 cap = cv2.VideoCapture(0)
 
-def arm_and_takeoff(target_altitude):
+def arm_motors():
     """
-    Arma los motores y despega a la altitud indicada.
+    Arma los motores del dron.
     """
     print("Armando motores...")
     vehicle.mode = VehicleMode("GUIDED")
@@ -38,30 +38,7 @@ def arm_and_takeoff(target_altitude):
         print("Esperando que los motores se armen...")
         time.sleep(1)
 
-    print(f"Despegando a {target_altitude} metros...")
-    vehicle.simple_takeoff(target_altitude)  # Orden de despegue
-
-    # Espera hasta alcanzar la altitud objetivo
-    while True:
-        print(f"Altura actual: {vehicle.location.global_relative_frame.alt:.1f} metros")
-        if vehicle.location.global_relative_frame.alt >= target_altitude * 0.95:  # 95% de la altura objetivo
-            print("Altitud alcanzada.")
-            break
-        time.sleep(1)
-
-def land():
-    """
-    Realiza un aterrizaje controlado.
-    """
-    print("Iniciando aterrizaje...")
-    vehicle.mode = VehicleMode("LAND")
-
-    # Espera hasta que el dron aterrice completamente
-    while vehicle.armed:
-        print(f"Altura actual: {vehicle.location.global_relative_frame.alt:.1f} metros")
-        time.sleep(1)
-
-    print("Aterrizaje completado.")
+    print("Motores armados.")
 
 def send_ned_velocity(velocity_x, velocity_y, velocity_z, duration):
     """
@@ -105,9 +82,9 @@ def izquierda(duration):
     print("Girando a la izquierda...")
     send_ned_velocity(0, -1, 0, duration)  # Izquierda (Oeste)
 
-def detect_objects():
+def detect_person_and_follow():
     """
-    Detecta objetos utilizando YOLOv3-tiny y toma decisiones de movimiento.
+    Detecta a una persona y ajusta la posición del dron según la distancia.
     """
     while True:
         # Capturar frame de la cámara
@@ -130,7 +107,7 @@ def detect_objects():
                 scores = detection[5:]
                 class_id = np.argmax(scores)
                 confidence = scores[class_id]
-                if confidence > 0.5:  # Umbral de confianza
+                if confidence > 0.5 and classes[class_id] == "person":  # Solo detectar personas
                     center_x = int(detection[0] * width)
                     center_y = int(detection[1] * height)
                     w = int(detection[2] * width)
@@ -150,31 +127,36 @@ def detect_objects():
                 cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
                 cv2.putText(frame, label, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
 
+                # Calcular la distancia aproximada (basada en el tamaño de la caja)
+                distance = (1 / (w * h)) * 10000  # Fórmula simplificada para pruebas
+
+                # Tomar decisiones basadas en la distancia
+                if distance > 2:  # Si está a más de 2 metros, acercarse
+                    print("Persona detectada. Acercándose...")
+                    avanzar(2)
+                elif distance < 1:  # Si está a menos de 1 metro, alejarse
+                    print("Persona detectada. Alejándose...")
+                    retroceder(2)
+                else:  # Si está entre 1 y 2 metros, girar
+                    print("Persona detectada. Girando...")
+                    if x < width / 2:  # Si la persona está a la izquierda, girar a la izquierda
+                        izquierda(2)
+                    else:  # Si la persona está a la derecha, girar a la derecha
+                        derecha(2)
+
         # Mostrar el frame
         cv2.imshow("YOLOv3-tiny", frame)
         key = cv2.waitKey(1)
         if key == 27:  # Presionar ESC para salir
             break
 
-        # Tomar decisiones basadas en las detecciones
-        if len(boxes) > 0:
-            print("Objeto detectado. Retrocediendo...")
-            retroceder(2)  # Retrocede durante 2 segundos si detecta un objeto
-        else:
-            print("No se detectaron objetos. Avanzando...")
-            avanzar(2)  # Avanza durante 2 segundos si no hay objetos
-
 # Ejecución principal
 try:
-    # Despegar a 5 metros
-    arm_and_takeoff(5)
-    time.sleep(5)  # Espera 5 segundos después del despegue
+    # Armar los motores (sin despegar)
+    arm_motors()
 
-    # Iniciar la detección de objetos y movimientos
-    detect_objects()
-
-    # Aterrizar
-    land()
+    # Iniciar la detección de personas y seguimiento
+    detect_person_and_follow()
 finally:
     # Liberar recursos
     cap.release()
