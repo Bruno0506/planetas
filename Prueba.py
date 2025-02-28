@@ -31,9 +31,18 @@ def arm_motors():
     """
     print("Armando motores...")
     vehicle.mode = VehicleMode("GUIDED")
+
+    # Esperar a que el dron esté listo para armarse
+    while not vehicle.is_armable:
+        print("Esperando que el dron esté listo para armarse...")
+        print(f"GPS: {vehicle.gps_0}")
+        print(f"Batería: {vehicle.battery}")
+        print(f"Estado de los sensores: {vehicle.system_status}")
+        time.sleep(1)
+
     vehicle.armed = True
 
-    # Espera hasta que los motores estén armados
+    # Esperar hasta que los motores estén armados
     while not vehicle.armed:
         print("Esperando que los motores se armen...")
         time.sleep(1)
