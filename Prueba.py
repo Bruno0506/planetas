@@ -1,70 +1,41 @@
-from dronekit import connect, VehicleMode
 import time
+import navio.pwm
+import navio.util
 
-# Conectar con el dron (simulación o hardware)
-print("Conectando al dron...")
-vehicle = connect('127.0.0.1:14550', wait_ready=True)
+# Inicializar PWM para los motores
+MOTOR_CHANNEL = 0  # Puedes cambiarlo si usas otro canal PWM
+PWM_FREQUENCY = 50  # Hz (Frecuencia para ESCs de motores)
+MIN_THROTTLE = 1.0  # PWM mínimo (motores apagados)
+ARM_THROTTLE = 1.3  # PWM para armar motores
+HOVER_THROTTLE = 1.5  # PWM para mantener "vuelo" (simulado)
 
-def arm_and_takeoff(target_altitude):
-    """
-    Arma los motores y despega a la altitud indicada.
-    """
-    print("Iniciando despegue...")
+# Habilitar Navio2
+navio.util.check_apm()  # Verifica si ArduPilot está corriendo
+pwm = navio.pwm.PWM(MOTOR_CHANNEL)
+pwm.set_period(PWM_FREQUENCY)  # Configurar la frecuencia de PWM
+pwm.enable()  # Habilitar PWM
 
-    # Poner en modo GUIDED (necesario para control autónomo)
-    vehicle.mode = VehicleMode("GUIDED")
-    
-    # Esperar hasta que el dron pueda armarse
-    while not vehicle.is_armable:
-        print("Esperando que el dron sea armable...")
-        time.sleep(1)
+print("🚀 Iniciando secuencia de armado...")
+time.sleep(2)
 
-    # Armar motores
-    vehicle.armed = True
-    while not vehicle.armed:
-        print("Esperando que los motores se armen...")
-        time.sleep(1)
+# 1️⃣ **Armar motores**
+print("⚙ Armando motores...")
+pwm.set_duty_cycle(ARM_THROTTLE)  # Enviar señal de armado
+time.sleep(3)
 
-    print("Motores armados. Despegando...")
+# 2️⃣ **Simular despegue**
+print("🛫 Simulando despegue (sin levantar el dron realmente)...")
+pwm.set_duty_cycle(HOVER_THROTTLE)  # Mantener un throttle estable
+time.sleep(5)
 
-    # Orden de despegue
-    vehicle.simple_takeoff(target_altitude)
+# 3️⃣ **Aterrizar**
+print("🛬 Iniciando aterrizaje...")
+pwm.set_duty_cycle(ARM_THROTTLE)  # Reducir potencia
+time.sleep(3)
 
-    # Esperar hasta alcanzar la altitud deseada
-    while True:
-        altura_actual = vehicle.location.global_relative_frame.alt
-        print(f"Altura actual: {altura_actual:.2f} m")
-        
-        if altura_actual >= target_altitude * 0.95:  # Si está cerca de la altitud deseada
-            print("Altitud alcanzada.")
-            break
-        
-        time.sleep(1)
+# 4️⃣ **Apagar motores**
+print("⛔ Apagando motores...")
+pwm.set_duty_cycle(MIN_THROTTLE)  # Cortar potencia
+time.sleep(2)
 
-def land_and_shutdown():
-    """
-    Aterriza el dron y apaga los motores.
-    """
-    print("Iniciando aterrizaje...")
-    vehicle.mode = VehicleMode("LAND")
-
-    # Esperar hasta que aterrice
-    while vehicle.armed:
-        print(f"Altura actual: {vehicle.location.global_relative_frame.alt:.2f} m")
-        time.sleep(1)
-
-    print("Dron en tierra. Apagando motores...")
-    vehicle.armed = False
-
-    print("Motores apagados. Cerrando conexión.")
-    vehicle.close()
-
-# 📌 Ejecución principal
-try:
-    arm_and_takeoff(1)  # Despegar a 1 metro
-    time.sleep(5)  # Esperar 5 segundos en el aire
-    land_and_shutdown()  # Aterrizar y apagar motores
-
-except Exception as e:
-    print(f"Error detectado: {e}")
-    vehicle.close()
+print("✅ Secuencia completa.")
