@@ -46,8 +46,13 @@ def detectar_persona():
         classes = [line.strip() for line in f.readlines()]
 
     cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        print("Error: No se pudo abrir la cámara.")
+        return None
+
     ret, frame = cap.read()
     if not ret:
+        print("Error: No se pudo capturar la imagen.")
         return None
 
     height, width, channels = frame.shape
@@ -96,6 +101,7 @@ def simular_seguimiento():
         if posicion is None:
             print("No se detecta ninguna persona.")
             send_ned_velocity(0, 0, 0, 1)  # Detener el dron
+            time.sleep(1)  # Esperar antes de la siguiente detección
             continue
 
         x, y = posicion
@@ -112,15 +118,33 @@ def simular_seguimiento():
             print("Moviendo hacia adelante...")
             send_ned_velocity(1, 0, 0, 1)
 
+        time.sleep(1)  # Esperar antes de la siguiente detección
+
 # **Ejecutar la simulación**
 try:
+    print("Cambiando a modo GUIDED_NOGPS...")
     vehicle.mode = VehicleMode("GUIDED_NOGPS")
+    while not vehicle.mode.name == "GUIDED_NOGPS":
+        print("Esperando cambio de modo...")
+        time.sleep(1)
+
+    print("Armando motores...")
     vehicle.armed = True
-    time.sleep(2)
+    while not vehicle.armed:
+        print("Esperando armado...")
+        time.sleep(1)
+
+    print("Motores armados. Iniciando seguimiento...")
     simular_seguimiento()
 except KeyboardInterrupt:
     print("Simulación detenida por el usuario.")
 finally:
+    print("Desarmando motores...")
     vehicle.armed = False
+    while vehicle.armed:
+        print("Esperando desarmado...")
+        time.sleep(1)
+
+    print("Cerrando conexión...")
     vehicle.close()
     print("Simulación completada.")
