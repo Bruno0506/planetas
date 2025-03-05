@@ -153,4 +153,6 @@ finally:
 
     print("Cerrando cámara...")
     cap.release()
-    print("Cerrando conexión...
+    print("Cerrando conexión...")
+    vehicle.close()
+    print("Simulación completada.")
