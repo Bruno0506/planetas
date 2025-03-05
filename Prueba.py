@@ -34,7 +34,7 @@ def send_ned_velocity(velocity_x, velocity_y, velocity_z, duration):
     # Detener el movimiento después de la duración
     send_ned_velocity(0, 0, 0, 1)
 
-def detectar_persona(cap, net, output_layers):
+def detectar_persona(cap, net, output_layers, classes):
     """
     Detecta la posición de una persona en la imagen utilizando YOLO.
     """
@@ -56,7 +56,7 @@ def detectar_persona(cap, net, output_layers):
             scores = detection[5:]
             class_id = np.argmax(scores)
             confidence = scores[class_id]
-            if confidence > 0.5 and class_id == 0:  # Solo personas (class_id = 0)
+            if confidence > 0.5 and classes[class_id] == "person":  # Solo personas (class_id = 0)
                 center_x = int(detection[0] * width)
                 center_y = int(detection[1] * height)
                 w = int(detection[2] * width)
@@ -79,13 +79,13 @@ def detectar_persona(cap, net, output_layers):
 
     return None
 
-def simular_seguimiento(cap, net, output_layers):
+def simular_seguimiento(cap, net, output_layers, classes):
     """
     Simula el seguimiento de una persona.
     """
     print("Simulando seguimiento...")
     while True:
-        posicion = detectar_persona(cap, net, output_layers)
+        posicion = detectar_persona(cap, net, output_layers, classes)
         if posicion is None:
             print("No se detecta ninguna persona.")
             send_ned_velocity(0, 0, 0, 1)  # Detener el dron
@@ -108,12 +108,18 @@ def simular_seguimiento(cap, net, output_layers):
 
         time.sleep(1)  # Esperar antes de la siguiente detección
 
-# **Cargar el modelo YOLO**
+# **Cargar el modelo YOLO y las clases**
+print("Cargando modelo YOLO...")
 net = cv2.dnn.readNet("yolov3.weights", "yolov3.cfg")
 layer_names = net.getLayerNames()
 output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
 
+# **Cargar las clases desde coco.names**
+with open("coco.names", "r") as f:
+    classes = [line.strip() for line in f.readlines()]
+
 # **Abrir la cámara**
+print("Abriendo cámara...")
 cap = cv2.VideoCapture(0)
 if not cap.isOpened():
     print("Error: No se pudo abrir la cámara.")
@@ -135,7 +141,7 @@ try:
         time.sleep(1)
 
     print("Motores armados. Iniciando seguimiento...")
-    simular_seguimiento(cap, net, output_layers)
+    simular_seguimiento(cap, net, output_layers, classes)
 except KeyboardInterrupt:
     print("Simulación detenida por el usuario.")
 finally:
@@ -147,6 +153,4 @@ finally:
 
     print("Cerrando cámara...")
     cap.release()
-    print("Cerrando conexión...")
-    vehicle.close()
-    print("Simulación completada.")
+    print("Cerrando conexión...
