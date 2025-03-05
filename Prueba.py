@@ -79,15 +79,24 @@ def detectar_persona(cap, net, output_layers, classes):
 
     return None
 
+def simular_despegue(altura):
+    """
+    Simula el despegue del dron y lo mantiene a una altura fija.
+    """
+    print(f"Simulando despegue a {altura} metros...")
+    send_ned_velocity(0, 0, -1, int(altura))  # Subir a la altura deseada
+    print(f"Dron a {altura} metros. Esperando estabilización...")
+    time.sleep(5)  # Esperar a que el dron se estabilice
+
 def simular_seguimiento(cap, net, output_layers, classes):
     """
     Simula el seguimiento de una persona.
     """
-    print("Simulando seguimiento...")
+    print("Iniciando seguimiento...")
     while True:
         posicion = detectar_persona(cap, net, output_layers, classes)
         if posicion is None:
-            print("No se detecta ninguna persona.")
+            print("No se detecta ninguna persona. Deteniendo el dron...")
             send_ned_velocity(0, 0, 0, 1)  # Detener el dron
             time.sleep(1)  # Esperar antes de la siguiente detección
             continue
@@ -140,7 +149,10 @@ try:
         print("Esperando armado...")
         time.sleep(1)
 
-    print("Motores armados. Iniciando seguimiento...")
+    print("Motores armados. Simulando despegue...")
+    simular_despegue(altura=2)  # Simular despegue a 2 metros de altura
+
+    print("Iniciando seguimiento...")
     simular_seguimiento(cap, net, output_layers, classes)
 except KeyboardInterrupt:
     print("Simulación detenida por el usuario.")
