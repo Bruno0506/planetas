@@ -10,24 +10,24 @@ except Exception as e:
     print(f"Error al conectar: {e}")
     exit()
 
-# Función para simular el despegue
-def simular_despegue(altura):
-    print(f"Simulando despegue a {altura} metros...")
+# Función para despegar a una altitud específica
+def despegar(altura):
+    print(f"Despegando a {altura} metros...")
     vehicle.simple_takeoff(altura)  # Comando oficial de DroneKit para despegar
 
-    # Simular el ascenso
+    # Esperar a que el dron alcance la altitud deseada
     while True:
-        print(f"Altura actual simulada: {vehicle.location.global_relative_frame.alt} metros")
+        print(f"Altura actual: {vehicle.location.global_relative_frame.alt} metros")
         if vehicle.location.global_relative_frame.alt >= altura * 0.95:  # 95% de la altitud deseada
-            print(f"Altura de {altura} metros alcanzada (simulada).")
+            print(f"Altura de {altura} metros alcanzada.")
             break
         time.sleep(1)
 
 # Ejecutar la simulación
 try:
-    print("Cambiando a modo GUIDED_NOGPS...")
-    vehicle.mode = VehicleMode("GUIDED_NOGPS")
-    while not vehicle.mode.name == "GUIDED_NOGPS":
+    print("Cambiando a modo GUIDED...")
+    vehicle.mode = VehicleMode("GUIDED")
+    while not vehicle.mode.name == "GUIDED":
         print("Esperando cambio de modo...")
         time.sleep(1)
 
@@ -37,19 +37,19 @@ try:
         print("Esperando armado...")
         time.sleep(1)
 
-    print("Motores armados. Simulando despegue...")
-    simular_despegue(altura=2)  # Simular despegue a 2 metros de altura
+    print("Motores armados. Despegando...")
+    despegar(altura=2)  # Despegar a 2 metros de altura
 
-    print("Manteniendo la altitud simulada durante 10 segundos...")
-    time.sleep(10)  # Mantener la altitud simulada durante 10 segundos
+    print("Manteniendo la altitud durante 10 segundos...")
+    time.sleep(10)  # Mantener la altitud durante 10 segundos
 
 except KeyboardInterrupt:
     print("Simulación detenida por el usuario.")
 finally:
-    print("Simulando aterrizaje...")
+    print("Aterrizando...")
     vehicle.mode = VehicleMode("LAND")
     while vehicle.armed:
-        print("Esperando aterrizaje simulado...")
+        print("Esperando aterrizaje...")
         time.sleep(1)
 
     print("Cerrando conexión...")
