@@ -13,22 +13,6 @@ except Exception as e:
     print(f"Error al conectar: {e}")
     exit()
 
-# Cargar el modelo YOLO
-net = cv2.dnn.readNet("yolov3.weights", "yolov3.cfg")
-layer_names = net.getLayerNames()
-output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
-
-# Cargar las clases desde coco.names
-with open("coco.names", "r") as f:
-    classes = [line.strip() for line in f.readlines()]
-
-# Abrir la cámara
-cap = cv2.VideoCapture(0)
-if not cap.isOpened():
-    print("Error: No se pudo abrir la cámara.")
-    vehicle.close()
-    exit()
-
 # Función para enviar comandos de velocidad
 def send_ned_velocity(velocity_x, velocity_y, velocity_z, duration):
     msg = vehicle.message_factory.set_position_target_local_ned_encode(
@@ -45,8 +29,15 @@ def send_ned_velocity(velocity_x, velocity_y, velocity_z, duration):
         vehicle.send_mavlink(msg)
         time.sleep(1)
 
+# Función para simular el despegue
+def simular_despegue(altura):
+    print(f"Simulando despegue a {altura} metros...")
+    send_ned_velocity(0, 0, -1, int(altura))  # Subir a la altura deseada
+    print(f"Dron a {altura} metros. Esperando estabilización...")
+    time.sleep(5)  # Esperar a que el dron se estabilice
+
 # Función para detectar personas
-def detectar_persona():
+def detectar_persona(cap, net, output_layers, classes):
     ret, frame = cap.read()
     if not ret:
         print("Error: No se pudo capturar la imagen.")
@@ -89,10 +80,10 @@ def detectar_persona():
     return None
 
 # Función para simular el seguimiento
-def simular_seguimiento():
+def simular_seguimiento(cap, net, output_layers, classes):
     print("Iniciando seguimiento...")
     while True:
-        posicion = detectar_persona()
+        posicion = detectar_persona(cap, net, output_layers, classes)
         if posicion is None:
             print("No se detecta ninguna persona. Deteniendo el dron...")
             send_ned_velocity(0, 0, 0, 1)  # Detener el dron
@@ -115,6 +106,22 @@ def simular_seguimiento():
 
         time.sleep(1)
 
+# Cargar el modelo YOLO
+net = cv2.dnn.readNet("yolov3.weights", "yolov3.cfg")
+layer_names = net.getLayerNames()
+output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+
+# Cargar las clases desde coco.names
+with open("coco.names", "r") as f:
+    classes = [line.strip() for line in f.readlines()]
+
+# Abrir la cámara
+cap = cv2.VideoCapture(0)
+if not cap.isOpened():
+    print("Error: No se pudo abrir la cámara.")
+    vehicle.close()
+    exit()
+
 # Ejecutar la simulación
 try:
     print("Cambiando a modo GUIDED_NOGPS...")
@@ -129,8 +136,11 @@ try:
         print("Esperando armado...")
         time.sleep(1)
 
-    print("Motores armados. Iniciando seguimiento...")
-    simular_seguimiento()
+    print("Motores armados. Simulando despegue...")
+    simular_despegue(altura=2)  # Simular despegue a 2 metros de altura
+
+    print("Iniciando seguimiento...")
+    simular_seguimiento(cap, net, output_layers, classes)
 except KeyboardInterrupt:
     print("Simulación detenida por el usuario.")
 finally:
