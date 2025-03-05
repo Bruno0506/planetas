@@ -4,7 +4,7 @@ import time
 import cv2
 import numpy as np
 
-# Conectar al dron a través de la Navio2
+# Conectar al dron
 try:
     print("Conectando al dron...")
     vehicle = connect('udpin:0.0.0.0:14550', wait_ready=True)
@@ -13,10 +13,24 @@ except Exception as e:
     print(f"Error al conectar: {e}")
     exit()
 
+# Cargar el modelo YOLO
+net = cv2.dnn.readNet("yolov3.weights", "yolov3.cfg")
+layer_names = net.getLayerNames()
+output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
+
+# Cargar las clases desde coco.names
+with open("coco.names", "r") as f:
+    classes = [line.strip() for line in f.readlines()]
+
+# Abrir la cámara
+cap = cv2.VideoCapture(0)
+if not cap.isOpened():
+    print("Error: No se pudo abrir la cámara.")
+    vehicle.close()
+    exit()
+
+# Función para enviar comandos de velocidad
 def send_ned_velocity(velocity_x, velocity_y, velocity_z, duration):
-    """
-    Envía comandos de velocidad en el sistema de coordenadas NED (Norte, Este, Abajo).
-    """
     msg = vehicle.message_factory.set_position_target_local_ned_encode(
         0, 0, 0,  # time_boot_ms, target_system, target_component
         mavutil.mavlink.MAV_FRAME_LOCAL_NED,  # Sistema de coordenadas NED
@@ -31,13 +45,8 @@ def send_ned_velocity(velocity_x, velocity_y, velocity_z, duration):
         vehicle.send_mavlink(msg)
         time.sleep(1)
 
-    # Detener el movimiento después de la duración
-    send_ned_velocity(0, 0, 0, 1)
-
-def detectar_persona(cap, net, output_layers, classes):
-    """
-    Detecta la posición de una persona en la imagen utilizando YOLO.
-    """
+# Función para detectar personas
+def detectar_persona():
     ret, frame = cap.read()
     if not ret:
         print("Error: No se pudo capturar la imagen.")
@@ -56,7 +65,7 @@ def detectar_persona(cap, net, output_layers, classes):
             scores = detection[5:]
             class_id = np.argmax(scores)
             confidence = scores[class_id]
-            if confidence > 0.5 and classes[class_id] == "person":  # Solo personas (class_id = 0)
+            if confidence > 0.5 and classes[class_id] == "person":
                 center_x = int(detection[0] * width)
                 center_y = int(detection[1] * height)
                 w = int(detection[2] * width)
@@ -79,26 +88,15 @@ def detectar_persona(cap, net, output_layers, classes):
 
     return None
 
-def simular_despegue(altura):
-    """
-    Simula el despegue del dron y lo mantiene a una altura fija.
-    """
-    print(f"Simulando despegue a {altura} metros...")
-    send_ned_velocity(0, 0, -1, int(altura))  # Subir a la altura deseada
-    print(f"Dron a {altura} metros. Esperando estabilización...")
-    time.sleep(5)  # Esperar a que el dron se estabilice
-
-def simular_seguimiento(cap, net, output_layers, classes):
-    """
-    Simula el seguimiento de una persona.
-    """
+# Función para simular el seguimiento
+def simular_seguimiento():
     print("Iniciando seguimiento...")
     while True:
-        posicion = detectar_persona(cap, net, output_layers, classes)
+        posicion = detectar_persona()
         if posicion is None:
             print("No se detecta ninguna persona. Deteniendo el dron...")
             send_ned_velocity(0, 0, 0, 1)  # Detener el dron
-            time.sleep(1)  # Esperar antes de la siguiente detección
+            time.sleep(1)
             continue
 
         x, y = posicion
@@ -115,27 +113,9 @@ def simular_seguimiento(cap, net, output_layers, classes):
             print("Moviendo hacia adelante...")
             send_ned_velocity(1, 0, 0, 1)
 
-        time.sleep(1)  # Esperar antes de la siguiente detección
+        time.sleep(1)
 
-# **Cargar el modelo YOLO y las clases**
-print("Cargando modelo YOLO...")
-net = cv2.dnn.readNet("yolov3.weights", "yolov3.cfg")
-layer_names = net.getLayerNames()
-output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
-
-# **Cargar las clases desde coco.names**
-with open("coco.names", "r") as f:
-    classes = [line.strip() for line in f.readlines()]
-
-# **Abrir la cámara**
-print("Abriendo cámara...")
-cap = cv2.VideoCapture(0)
-if not cap.isOpened():
-    print("Error: No se pudo abrir la cámara.")
-    vehicle.close()
-    exit()
-
-# **Ejecutar la simulación**
+# Ejecutar la simulación
 try:
     print("Cambiando a modo GUIDED_NOGPS...")
     vehicle.mode = VehicleMode("GUIDED_NOGPS")
@@ -149,11 +129,8 @@ try:
         print("Esperando armado...")
         time.sleep(1)
 
-    print("Motores armados. Simulando despegue...")
-    simular_despegue(altura=2)  # Simular despegue a 2 metros de altura
-
-    print("Iniciando seguimiento...")
-    simular_seguimiento(cap, net, output_layers, classes)
+    print("Motores armados. Iniciando seguimiento...")
+    simular_seguimiento()
 except KeyboardInterrupt:
     print("Simulación detenida por el usuario.")
 finally:
