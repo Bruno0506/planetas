@@ -4,48 +4,26 @@ import time
 from dronekit import connect, VehicleMode
 from pymavlink import mavutil
 
-# Conexión al dron
+# Conectar al dron
 print("Conectando al dron...")
-vehicle = connect('udpin:0.0.0.0:14550', wait_ready=True)
+vehicle = connect('127.0.0.1:14550', wait_ready=True)
 
-# Desactivar verificaciones de prearm
+# Desactivar chequeos de prearmado y GPS
 print("Desactivando verificaciones de prearm...")
 vehicle.parameters['ARMING_CHECK'] = 0
+vehicle.parameters['GPS_TYPE'] = 0  # Desactiva GPS si no se usa
 time.sleep(2)
-print("Estado de ARMING_CHECK:", vehicle.parameters['ARMING_CHECK'])
 
-# Cargar YOLOv3-tiny
-net = cv2.dnn.readNet("modelo/YOLO/yolov3-tiny.weights", "modelo/YOLO/yolov3-tiny.cfg")
-layer_names = net.getLayerNames()
-output_layers = [layer_names[i[0] - 1] for i in net.getUnconnectedOutLayers()]
-classes = open("modelo/YOLO/my_classes.name").read().strip().split("\n")
+# Configurar EKF para permitir vuelo sin GPS
+print("Configurando EKF...")
+vehicle.parameters['AHRS_EKF_TYPE'] = 3
+vehicle.parameters['EK2_ENABLE'] = 1
+vehicle.parameters['EK3_ENABLE'] = 0
+time.sleep(2)
 
-# Iniciar cámara
-cap = cv2.VideoCapture(0)  # Cambia a 2 si usas otra cámara
-
-def wait_until_armable(timeout=60):
-    """ Espera hasta que el dron esté listo para armarse o se alcance el tiempo de espera. """
-    start_time = time.time()
-    while not vehicle.is_armable:
-        print(f"Estado del dron: {vehicle.system_status.state}")
-        print(f"GPS: {vehicle.gps_0}")
-        print(f"EKF OK: {vehicle.ekf_ok}")
-        print(f"Batería: {vehicle.battery.level}%")
-        print(f"Modo actual: {vehicle.mode.name}")
-        print("Esperando inicialización del dron...")
-        
-        # Verificar si se ha alcanzado el tiempo de espera
-        if time.time() - start_time > timeout:
-            print("Tiempo de espera agotado. El dron no está listo para armarse.")
-            return False
-        
-        time.sleep(1)
-    
-    print("El dron está listo para armarse.")
-    return True
-
+# Función para enviar comandos de velocidad
 def send_velocity(velocity_x, velocity_y, velocity_z, yaw_rate=0):
-    """ Enviar comandos de velocidad al dron en modo GUIDED_NOGPS """
+    """Envia comandos de velocidad al dron en modo GUIDED_NOGPS"""
     msg = vehicle.message_factory.set_position_target_local_ned_encode(
         0, 0, 0, mavutil.mavlink.MAV_FRAME_BODY_NED,
         0b0000111111000111,  # Control solo de velocidades
@@ -56,45 +34,129 @@ def send_velocity(velocity_x, velocity_y, velocity_z, yaw_rate=0):
     vehicle.send_mavlink(msg)
     vehicle.flush()
 
-try:
-    # Esperar a que el dron esté listo para armarse
-    if not wait_until_armable(timeout=60):
-        print("No se pudo armar el dron. Saliendo...")
-        vehicle.close()
-        exit()
-
-    # Código principal (despegue, detección, etc.)
-    print("Armando motores...")
-    vehicle.armed = True
-    while not vehicle.armed:
-        print("Esperando armado...")
+# Función para esperar que el dron esté listo
+def esperar_listo():
+    print("Chequeando estado del dron...")
+    while not vehicle.is_armable:
+        print(f"GPS: fix={vehicle.gps_0.fix_type}, Satélites={vehicle.gps_0.satellites_visible}")
+        print(f"EKF OK: {vehicle.ekf_ok}, Batería: {vehicle.battery.level}%, Modo: {vehicle.mode.name}")
         time.sleep(1)
+    print("✅ Dron listo para armar!")
 
-    print("Motores armados. Listo para volar.")
+# Esperar que el dron esté listo
+esperar_listo()
 
-    # Simular despegue y vuelo
-    print("Simulando despegue...")
-    time.sleep(5)  # Simular ascenso
-    print("Simulando vuelo...")
-    time.sleep(10)  # Simular vuelo
+# Cambiar a modo de vuelo sin GPS
+print("Cambiando a modo GUIDED_NOGPS...")
+vehicle.mode = VehicleMode("GUIDED_NOGPS")
+time.sleep(2)
+print(f"Modo actual: {vehicle.mode.name}")
+
+# Intentar armar el dron
+print("Armando motores...")
+vehicle.armed = True
+
+# Esperar confirmación de armado
+while not vehicle.armed:
+    print("Esperando armado...")
+    time.sleep(1)
+
+print("✅ Motores armados, iniciando misión!")
+
+# Configurar YOLO
+config_path = "yolov3-tiny.cfg"
+weights_path = "yolov3-tiny.weights"
+labels_path = "coco.names"
+
+with open(labels_path, "r") as f:
+    labels = f.read().strip().split("\n")
+
+net = cv2.dnn.readNetFromDarknet(config_path, weights_path)
+layer_names = net.getLayerNames()
+output_layers = [layer_names[int(i) - 1] for i in net.getUnconnectedOutLayers()]
+
+# Inicializar cámara
+cap = cv2.VideoCapture(0)
+
+print("Iniciando visión y seguimiento...")
+try:
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("Error al capturar la imagen. Saliendo...")
+            break
+
+        # Preprocesamiento de la imagen para YOLO
+        height, width, _ = frame.shape
+        blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
+        net.setInput(blob)
+        detections = net.forward(output_layers)
+
+        person_detected = False
+        center_x, center_y = 0, 0
+        bbox_width = 0  # Ancho de la caja de la persona detectada
+
+        # Procesar detecciones
+        for detection in detections:
+            for obj in detection:
+                scores = obj[5:]
+                class_id = np.argmax(scores)
+                confidence = scores[class_id]
+
+                if confidence > 0.5 and labels[class_id] == "person":
+                    person_detected = True
+                    center_x = int(obj[0] * width)
+                    center_y = int(obj[1] * height)
+                    bbox_width = int(obj[2] * width)
+
+                    # Dibujar rectángulo
+                    w = int(obj[2] * width)
+                    h = int(obj[3] * height)
+                    x = int(center_x - w / 2)
+                    y = int(center_y - h / 2)
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+        # Ajuste de movimiento basado en detección
+        if person_detected:
+            # Movimiento lateral
+            move_x = 0.3 if center_x > width * 0.6 else (-0.3 if center_x < width * 0.4 else 0)
+            
+            # Movimiento adelante/atrás basado en tamaño del bounding box (distancia)
+            if bbox_width < width * 0.2:  # Persona lejos
+                move_y = 0.3
+                print("🔹 Persona lejos, avanzando...")
+            elif bbox_width > width * 0.4:  # Persona muy cerca
+                move_y = -0.3
+                print("🔸 Persona muy cerca, retrocediendo...")
+            else:
+                move_y = 0  # Mantener posición
+
+            # Enviar comandos al dron
+            send_velocity(move_x, move_y, 0)
+
+        else:
+            print("❌ No se detectó persona, deteniendo dron...")
+            send_velocity(0, 0, 0)
+
+        # Mostrar frame con detección
+        cv2.imshow("YOLO Tracking", frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            print("Salida por el usuario.")
+            break
 
 except KeyboardInterrupt:
-    print("\nInterrupción detectada. Aterrizando el dron...")
-
+    print("Simulación detenida por el usuario.")
 finally:
-    # Volver a un estado seguro
-    print("Aterrizando el dron...")
+    print("Simulando aterrizaje...")
     vehicle.mode = VehicleMode("LAND")
     while vehicle.armed:
         print("Esperando aterrizaje...")
         time.sleep(1)
 
-    print("Desarmando motores...")
-    vehicle.armed = False
-    while vehicle.armed:
-        print("Esperando desarme...")
-        time.sleep(1)
+    print("✅ Dron aterrizado y apagado.")
 
-    print("Cerrando conexión con el dron...")
+    # Cerrar todo correctamente
+    cap.release()
+    cv2.destroyAllWindows()
     vehicle.close()
     print("Dron desconectado correctamente.")
