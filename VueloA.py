@@ -9,10 +9,10 @@ print("Conectando al dron...")
 vehicle = connect('127.0.0.1:14550', baud=57600, wait_ready=True)
 
 # Cargar YOLOv3-tiny
-net = cv2.dnn.readNet("yolov3-tiny.weights", "yolov3-tiny.cfg")
+net = cv2.dnn.readNet("modelo/YOLO/yolov3-tiny.weights", "modelo/YOLO/yolov3-tiny.cfg")
 layer_names = net.getLayerNames()
 output_layers = [layer_names[i - 1] for i in net.getUnconnectedOutLayers()]
-classes = open("coco.names").read().strip().split("\n")
+classes = open("modelo/YOLO/my_classes.name").read().strip().split("\n")
 
 # Iniciar cámara
 cap = cv2.VideoCapture(0)  # Cambia a 2 si usas otra cámara
@@ -48,54 +48,61 @@ def arm_and_start():
     print("Motores armados. Listo para volar.")
 
 # Iniciar la simulación
-arm_and_start()
+try:
+    arm_and_start()
 
-while True:
-    ret, frame = cap.read()
-    if not ret:
-        break
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-    height, width, _ = frame.shape
-    blob = cv2.dnn.blobFromImage(frame, 0.00392, (416, 416), (0, 0, 0), True, crop=False)
-    net.setInput(blob)
-    detections = net.forward(output_layers)
+        height, width, _ = frame.shape
+        blob = cv2.dnn.blobFromImage(frame, 0.00392, (96, 96), (0, 0, 0), True, crop=False)
+        net.setInput(blob)
+        detections = net.forward(output_layers)
 
-    person_detected = False
-    center_x, center_y = 0, 0
+        person_detected = False
+        center_x, center_y = 0, 0
 
-    for detection in detections:
-        for obj in detection:
-            scores = obj[5:]
-            class_id = np.argmax(scores)
-            confidence = scores[class_id]
+        for detection in detections:
+            for obj in detection:
+                scores = obj[5:]
+                class_id = np.argmax(scores)
+                confidence = scores[class_id]
 
-            if confidence > 0.5 and classes[class_id] == "person":
-                person_detected = True
-                center_x = int(obj[0] * width)
-                center_y = int(obj[1] * height)
+                if confidence > 0.5 and classes[class_id] == "person":
+                    person_detected = True
+                    center_x = int(obj[0] * width)
+                    center_y = int(obj[1] * height)
 
-                # Dibujar rectángulo
-                w = int(obj[2] * width)
-                h = int(obj[3] * height)
-                x = int(center_x - w / 2)
-                y = int(center_y - h / 2)
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    # Dibujar rectángulo
+                    w = int(obj[2] * width)
+                    h = int(obj[3] * height)
+                    x = int(center_x - w / 2)
+                    y = int(center_y - h / 2)
+                    cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
 
-    # Ajuste de movimiento basado en detección
-    if person_detected:
-        move_x = 0.3 if center_x > width * 0.6 else (-0.3 if center_x < width * 0.4 else 0)
-        move_y = 0.3 if center_y > height * 0.6 else (-0.3 if center_y < height * 0.4 else 0)
-        send_velocity(move_x, move_y, 0)
-    else:
-        send_velocity(0, 0, 0)
+        # Ajuste de movimiento basado en detección
+        if person_detected:
+            move_x = 0.3 if center_x > width * 0.6 else (-0.3 if center_x < width * 0.4 else 0)
+            move_y = 0.3 if center_y > height * 0.6 else (-0.3 if center_y < height * 0.4 else 0)
+            send_velocity(move_x, move_y, 0)
+        else:
+            send_velocity(0, 0, 0)
 
-    # Mostrar frame
-    cv2.imshow("YOLO Tracking", frame)
-    if cv2.waitKey(1) & 0xFF == ord('q'):
-        break
+        # Mostrar frame
+        #cv2.imshow("YOLO Tracking", frame)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
-# Finalizar
-cap.release()
-cv2.destroyAllWindows()
-vehicle.mode = VehicleMode("LAND")
-vehicle.close()
+except KeyboardInterrupt:
+    print("\nInterrupción detectada. Aterrizando el dron...")
+    vehicle.mode = VehicleMode("LAND")
+    time.sleep(5)  # Esperar para aterrizar antes de cerrar
+
+finally:
+    print("Cerrando conexión con el dron...")
+    cap.release()
+    cv2.destroyAllWindows()
+    vehicle.close()
+    print("Dron desconectado correctamente.")
